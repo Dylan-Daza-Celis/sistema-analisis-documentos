@@ -29,6 +29,7 @@ const zeroShotModel = process.env.ZERO_SHOT_MODEL || "MoritzLaurer/mDeBERTa-v3-b
 const hfToken = process.env.HUGGINGFACE_API_TOKEN || "";
 const classificationThreshold = Number(process.env.CLASSIFICATION_THRESHOLD || "0.45");
 const maxCharsForClassifier = Number(process.env.CLASSIFICATION_MAX_CHARS || "2500");
+const userServiceUrl = process.env.USER_SERVICE_URL || "http://user-service:3000";
 
 // Diccionario de temas
 const temas = {
@@ -157,6 +158,85 @@ function extractKeywordsFromText(text, maxKeywords = defaultMaxKeywords) {
     .map(([token]) => token);
 }
 
+async function getUserThemes(userId) {
+  try {
+    const response = await fetch(`${userServiceUrl}/themes/${userId}`);
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    return Array.isArray(data.themes) ? data.themes : null;
+  } catch (err) {
+    console.log("No se pudo obtener temas del user-service:", err.message);
+    return null;
+  }
+}
+
+function buildLabelContext(themes) {
+  const candidateLabels = [];
+  const subthemeMap = {};
+
+  if (Array.isArray(themes)) {
+    themes.forEach((theme) => {
+      const themeName = theme && theme.name ? String(theme.name).trim() : "";
+      if (!themeName) {
+        return;
+      }
+
+      candidateLabels.push(themeName);
+
+      const subthemes = Array.isArray(theme.subthemes) ? theme.subthemes : [];
+      subthemes.forEach((sub) => {
+        const subName = String(sub || "").trim();
+        if (!subName) {
+          return;
+        }
+
+        const label = `${themeName}::${subName}`;
+        candidateLabels.push(label);
+        subthemeMap[label] = {
+          tema: themeName,
+          subtema: subName
+        };
+      });
+    });
+  }
+
+  if (candidateLabels.length === 0) {
+    return {
+      labels,
+      subthemeMap: {}
+    };
+  }
+
+  return {
+    labels: candidateLabels,
+    subthemeMap
+  };
+}
+
+function resolveLabel(label, subthemeMap) {
+  if (!label) {
+    return { tema: "General", subtema: null };
+  }
+
+  if (label === "General") {
+    return { tema: "General", subtema: null };
+  }
+
+  if (subthemeMap[label]) {
+    return subthemeMap[label];
+  }
+
+  const parts = String(label).split("::");
+  if (parts.length === 2) {
+    return { tema: parts[0], subtema: parts[1] };
+  }
+
+  return { tema: label, subtema: null };
+}
+
 function parseZeroShotResponse(result) {
   if (!result) {
     return null;
@@ -197,13 +277,21 @@ function parseZeroShotResponse(result) {
   return null;
 }
 
-async function classifyTextWithZeroShot(text) {
+async function classifyTextWithZeroShot(text, candidateLabels) {
   if (!hfToken) {
     return null;
   }
 
   const inputText = trimTextForClassifier(text);
   if (!inputText) {
+    return null;
+  }
+
+  const labelsToUse = Array.isArray(candidateLabels) && candidateLabels.length > 0
+    ? candidateLabels
+    : labels;
+
+  if (!labelsToUse || labelsToUse.length === 0) {
     return null;
   }
 
@@ -225,7 +313,7 @@ async function classifyTextWithZeroShot(text) {
       body: JSON.stringify({
         inputs: inputText,
         parameters: {
-          candidate_labels: labels,
+          candidate_labels: labelsToUse,
           multi_label: false
         },
         options: {
@@ -271,9 +359,9 @@ async function classifyTextWithZeroShot(text) {
   };
 }
 
-async function classifyText(text) {
+async function classifyText(text, candidateLabels) {
   try {
-    const zeroShotResult = await classifyTextWithZeroShot(text);
+    const zeroShotResult = await classifyTextWithZeroShot(text, candidateLabels);
     if (zeroShotResult) {
       return zeroShotResult;
     }
@@ -284,10 +372,52 @@ async function classifyText(text) {
   return classifyTextByKeywords(text);
 }
 
-async function updateUserIndex(user, metadata) {
-  const indexPath = `${user}/indices.json`;
+function removeDocumentFromIndex(index, documentId) {
+  const documents = Array.isArray(index.documents) ? index.documents : [];
+  const filteredDocs = documents.filter((doc) => doc.id !== documentId);
+  const byTema = {};
+  const bySubtema = {};
+
+  filteredDocs.forEach((doc) => {
+    const tema = doc.tema || "General";
+    if (!byTema[tema]) {
+      byTema[tema] = [];
+    }
+    byTema[tema].push(doc.id);
+
+    if (doc.subtema) {
+      if (!bySubtema[doc.subtema]) {
+        bySubtema[doc.subtema] = [];
+      }
+      bySubtema[doc.subtema].push(doc.id);
+    }
+  });
+
+  return {
+    ...index,
+    documents: filteredDocs,
+    byTema,
+    bySubtema,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function normalizeSearchTerm(term) {
+  if (!term) {
+    return "";
+  }
+
+  return term
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+async function updateUserIndex(userId, metadata) {
+  const indexPath = `${userId}/indices.json`;
   const currentIndex = await readJsonObject(indexPath, {
-    user,
+    user: userId,
+    userId,
     updatedAt: null,
     documents: [],
     byTema: {}
@@ -297,6 +427,7 @@ async function updateUserIndex(user, metadata) {
     id: metadata.id,
     filename: metadata.filename,
     tema: metadata.tema || "General",
+    subtema: metadata.subtema || null,
     keywords: Array.isArray(metadata.keywords) ? metadata.keywords : [],
     status: metadata.status,
     updatedAt: new Date().toISOString()
@@ -307,29 +438,39 @@ async function updateUserIndex(user, metadata) {
   deduplicated.push(documentEntry);
 
   const byTema = {};
+  const bySubtema = {};
   deduplicated.forEach((doc) => {
     const tema = doc.tema || "General";
     if (!byTema[tema]) {
       byTema[tema] = [];
     }
     byTema[tema].push(doc.id);
+
+    if (doc.subtema) {
+      if (!bySubtema[doc.subtema]) {
+        bySubtema[doc.subtema] = [];
+      }
+      bySubtema[doc.subtema].push(doc.id);
+    }
   });
 
   const newIndex = {
-    user,
+    user: currentIndex.user || userId,
+    userId,
     updatedAt: new Date().toISOString(),
     documents: deduplicated,
-    byTema
+    byTema,
+    bySubtema
   };
 
   await writeJsonObject(indexPath, newIndex);
   console.log("Indice actualizado:", indexPath);
 }
 
-// 🔷 Función de clasificación
-async function classifyDocument(user, id) {
-  const pdfPath = `${user}/${id}.pdf`;
-  const metaPath = `${user}/${id}.json`;
+// Función de clasificación
+async function classifyDocument(userId, id) {
+  const pdfPath = `${userId}/${id}.pdf`;
+  const metaPath = `${userId}/${id}.json`;
 
   try {
     // Descargar PDF
@@ -339,8 +480,12 @@ async function classifyDocument(user, id) {
     const text = pdfData.text.toLowerCase();
     const extractedKeywords = extractKeywordsFromText(text);
 
-    const { detectedTema, keywords, confidence, method } = await classifyText(text);
-    console.log("Documento clasificado como:", detectedTema, `(${method}, score=${confidence})`);
+    const userThemes = await getUserThemes(userId);
+    const labelContext = buildLabelContext(userThemes);
+    const { detectedTema, keywords, confidence, method } = await classifyText(text, labelContext.labels);
+    const resolved = resolveLabel(detectedTema, labelContext.subthemeMap);
+
+    console.log("Documento clasificado como:", resolved.tema, `(${method}, score=${confidence})`);
 
     // Descargar metadata
     const metadata = await readJsonObject(metaPath);
@@ -348,7 +493,8 @@ async function classifyDocument(user, id) {
       throw new Error(`Metadata no encontrada para ${metaPath}`);
     }
 
-    metadata.tema = detectedTema;
+    metadata.tema = resolved.tema;
+    metadata.subtema = resolved.subtema || null;
     metadata.keywords = Array.from(new Set([...(keywords || []), ...extractedKeywords])).slice(0, defaultMaxKeywords);
     metadata.classification = {
       method,
@@ -361,7 +507,7 @@ async function classifyDocument(user, id) {
     console.log("Metadata actualizada");
 
     // Actualizar índice por usuario sin duplicar documentos
-    await updateUserIndex(user, metadata);
+    await updateUserIndex(userId, metadata);
 
   } catch (err) {
     console.error("Error clasificando:", err);
@@ -401,7 +547,14 @@ async function startConsumer() {
           console.log("Evento recibido:", data);
 
           // Aquí ocurre la magia
-          await classifyDocument(data.user, data.id);
+          const userId = data.userId || data.user;
+
+          if (!userId || !data.id) {
+            console.error("Evento incompleto en Kafka:", data);
+            return;
+          }
+
+          await classifyDocument(userId, data.id);
         } catch (err) {
           console.error("Error procesando mensaje Kafka:", err.message);
         }
@@ -499,6 +652,50 @@ app.get("/indices/:user", async (req, res) => {
   }
 });
 
+function mapIndexDocument(doc) {
+  return {
+    id: doc.id,
+    name: doc.filename || "Sin nombre",
+    filename: doc.filename || null,
+    tema: doc.tema || "General",
+    subtema: doc.subtema || null,
+    status: doc.status || "pending",
+    keywords: Array.isArray(doc.keywords) ? doc.keywords : [],
+    classification: doc.classification || null,
+    updatedAt: doc.updatedAt || null
+  };
+}
+
+// Endpoint para listar los documentos de un usuario 
+app.get("/documents/:user", async (req, res) => {
+  const { user } = req.params;
+  const indexPath = `${user}/indices.json`;
+
+  try {
+    const index = await readJsonObject(indexPath, null);
+
+    if (!index) {
+      return res.status(404).json({
+        message: "Indice no encontrado",
+        path: indexPath
+      });
+    }
+
+    const documents = Array.isArray(index.documents)
+      ? index.documents.map(mapIndexDocument)
+      : [];
+
+    return res.json({
+      user,
+      total: documents.length,
+      documents
+    });
+  } catch (err) {
+    console.error("Error consultando documentos del usuario:", err.message);
+    return res.status(500).json({ message: "Error consultando documentos del usuario" });
+  }
+});
+
 // Endpoint para consultar documentos de un tema dentro del indice
 app.get("/indices/:user/tema/:tema", async (req, res) => {
   const { user, tema } = req.params;
@@ -517,7 +714,7 @@ app.get("/indices/:user/tema/:tema", async (req, res) => {
     const temas = index.byTema || {};
     const ids = Array.isArray(temas[tema]) ? temas[tema] : [];
     const docs = Array.isArray(index.documents)
-      ? index.documents.filter((doc) => ids.includes(doc.id))
+      ? index.documents.filter((doc) => ids.includes(doc.id)).map(mapIndexDocument)
       : [];
 
     return res.json({
@@ -540,4 +737,141 @@ setInterval(() => {
 // Servidor (opcional, pero útil para debug)
 app.listen(3000, () => {
   console.log("Classification Service corriendo");
+});
+
+// Endpoint para listar temas disponibles
+app.get("/temas", (req, res) => {
+  return res.json({
+    total: labels.length,
+    temas: labels
+  });
+});
+
+// Endpoint para listar temas del usuario (con subtemas)
+app.get("/temas/:userId", async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    const themes = await getUserThemes(userId);
+    if (!themes) {
+      return res.json({
+        total: labels.length,
+        temas: labels
+      });
+    }
+
+    return res.json({
+      userId,
+      total: themes.length,
+      themes
+    });
+  } catch (err) {
+    console.error("Error consultando temas del usuario:", err.message);
+    return res.status(500).json({ message: "Error consultando temas" });
+  }
+});
+
+// Endpoint para buscar documentos por keyword dentro del indice
+app.get("/indices/:user/keywords/:term", async (req, res) => {
+  const { user, term } = req.params;
+  const indexPath = `${user}/indices.json`;
+  const normalizedTerm = normalizeSearchTerm(term);
+
+  try {
+    const index = await readJsonObject(indexPath, null);
+
+    if (!index) {
+      return res.status(404).json({
+        message: "Indice no encontrado",
+        path: indexPath
+      });
+    }
+
+    if (!normalizedTerm) {
+      return res.status(400).json({ message: "keyword es requerido" });
+    }
+
+    const docs = Array.isArray(index.documents)
+      ? index.documents.filter((doc) => {
+        const keywords = Array.isArray(doc.keywords)
+          ? doc.keywords.map(normalizeSearchTerm)
+          : [];
+        const filename = normalizeSearchTerm(doc.filename || "");
+
+        return keywords.includes(normalizedTerm) || filename.includes(normalizedTerm);
+      }).map(mapIndexDocument)
+      : [];
+
+    return res.json({
+      user,
+      keyword: term,
+      total: docs.length,
+      documents: docs
+    });
+  } catch (err) {
+    console.error("Error consultando indice por keyword:", err.message);
+    return res.status(500).json({ message: "Error consultando indice por keyword" });
+  }
+});
+
+// Endpoint para eliminar un documento del indice
+app.delete("/indices/:user/document/:id", async (req, res) => {
+  const { user, id } = req.params;
+  const indexPath = `${user}/indices.json`;
+
+  try {
+    const index = await readJsonObject(indexPath, null);
+
+    if (!index) {
+      return res.status(404).json({
+        message: "Indice no encontrado",
+        path: indexPath
+      });
+    }
+
+    const updatedIndex = removeDocumentFromIndex(index, id);
+    await writeJsonObject(indexPath, updatedIndex);
+
+    return res.json({
+      message: "Documento removido del indice",
+      user,
+      id
+    });
+  } catch (err) {
+    console.error("Error eliminando documento del indice:", err.message);
+    return res.status(500).json({ message: "Error eliminando documento del indice" });
+  }
+});
+
+// Endpoint para consultar documentos de un subtema dentro del indice
+app.get("/indices/:user/subtema/:subtema", async (req, res) => {
+  const { user, subtema } = req.params;
+  const indexPath = `${user}/indices.json`;
+
+  try {
+    const index = await readJsonObject(indexPath, null);
+
+    if (!index) {
+      return res.status(404).json({
+        message: "Indice no encontrado",
+        path: indexPath
+      });
+    }
+
+    const bySubtema = index.bySubtema || {};
+    const ids = Array.isArray(bySubtema[subtema]) ? bySubtema[subtema] : [];
+    const docs = Array.isArray(index.documents)
+      ? index.documents.filter((doc) => ids.includes(doc.id)).map(mapIndexDocument)
+      : [];
+
+    return res.json({
+      user,
+      subtema,
+      total: docs.length,
+      documents: docs
+    });
+  } catch (err) {
+    console.error("Error consultando indice por subtema:", err.message);
+    return res.status(500).json({ message: "Error consultando indice por subtema" });
+  }
 });
