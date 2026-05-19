@@ -6,7 +6,7 @@ const app = express();
 app.use(bodyParser.json());
 
 const minioClient = new Minio.Client({
-	endPoint: "minio",
+	endPoint: "minio1",
 	port: 9000,
 	useSSL: false,
 	accessKey: "admin",

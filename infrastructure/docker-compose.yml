@@ -134,6 +134,17 @@ services:
       KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
 
+  classification-model:
+    build:
+      context: ../services/classification-model-service
+      dockerfile: Dockerfile
+    container_name: classification-model
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: production
+    restart: unless-stopped
+
 volumes:
   minio1-data:
   minio2-data:

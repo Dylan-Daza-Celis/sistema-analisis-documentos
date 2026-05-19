@@ -9,7 +9,7 @@ app.use(express.json());
 
 //  Configuración MinIO
 const minioClient = new Minio.Client({
-  endPoint: "minio",
+  endPoint: "minio1",
   port: 9000,
   useSSL: false,
   accessKey: "admin",
@@ -132,13 +132,26 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   if (!file) return res.status(400).send("No file");
   if (!userId) return res.status(400).send("userId es requerido");
 
+  // Validar que sea PDF
+  const isPdfMimeType = file.mimetype === "application/pdf";
+  const isPdfExtension = file.originalname.toLowerCase().endsWith(".pdf");
+  
+  if (!isPdfMimeType || !isPdfExtension) {
+    console.log(`Rechazo de archivo no-PDF: ${file.originalname} (MIME: ${file.mimetype})`);
+    return res.status(400).json({ 
+      error: "Solo se aceptan archivos PDF. Por favor, sube un archivo PDF válido." 
+    });
+  }
+
   const id = Date.now().toString();
 
   const pdfPath = `${userId}/${id}.pdf`;
   const metaPath = `${userId}/${id}.json`;
+  const eventSentPath = `${userId}/${id}.event_sent`;
 
   try {
     // 1. Guardar PDF
+    console.log(`Guardando PDF: ${pdfPath}`);
     await minioClient.putObject(bucket, pdfPath, file.buffer);
 
     // 2. Crear metadata
@@ -148,14 +161,27 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       filename: file.originalname,
       status: "pending",
       tema: null,
-      keywords: []
+      keywords: [],
+      createdAt: new Date().toISOString()
     });
 
+    console.log(`Guardando metadata: ${metaPath}`);
     await minioClient.putObject(bucket, metaPath, metadata);
 
-    // 3. Enviar evento a Kafka
+    // 3. Marcar que vamos a enviar el evento
+    const eventMarker = JSON.stringify({
+      documentId: id,
+      userId,
+      sentAt: new Date().toISOString()
+    });
+    console.log(`Marcando evento como enviado: ${eventSentPath}`);
+    await minioClient.putObject(bucket, eventSentPath, eventMarker);
+
+    // 4. Enviar evento a Kafka UNA SOLA VEZ
+    console.log(`Enviando evento Kafka para documento: ${id}`);
     await sendEvent({ userId, id });
 
+    console.log(`Documento completamente procesado: ${id}`);
     res.json({
       message: "Documento subido y evento enviado",
       id,
@@ -163,7 +189,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("Error al subir documento:", err);
     res.status(500).send("Error al subir documento");
   }
 });
