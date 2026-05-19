@@ -9,7 +9,7 @@ app.use(bodyParser.json());
 
 // Configuración MinIO
 const minioClient = new Minio.Client({
-  endPoint: "minio",
+  endPoint: "minio1",
   port: 9000,
   useSSL: false,
   accessKey: "admin",
@@ -186,8 +186,9 @@ waitForMinio();
 // REGISTRO
 app.post("/register", async (req, res) => {
   try {
-    const { name, email, password, userType } = req.body;
+    const { name, email, password, userType, masterPassword } = req.body;
     const normalizedEmail = typeof email === "string" ? normalizeEmail(email) : "";
+    const MASTER_PASSWORD = "12345";
     console.log("Registro recibido:", { name, email: normalizedEmail, userType });
     
     if (!name || !normalizedEmail || !password) {
@@ -204,22 +205,33 @@ app.post("/register", async (req, res) => {
       return res.status(409).send("El correo ya esta registrado");
     }
 
-    const userId = uuidv4();
-    const data = JSON.stringify({ 
-      userId, 
-      name, 
-      email: normalizedEmail, 
-      password,
-      userType: userType || "usuario",
-      createdAt: new Date().toISOString()
-    });
+    let finalUserType = "usuario";
+    
+    // Permitir registro como admin si la contraseña maestra es correcta
+    if (userType && String(userType).toLowerCase().trim() === "admin") {
+      if (masterPassword !== MASTER_PASSWORD) {
+        return res.status(403).send("Contraseña maestra incorrecta");
+      }
+      finalUserType = "admin";
+    }
 
-    await minioClient.putObject(bucket, objectName, data);
+    const userId = uuidv4();
+    // For security: always force public registrations to be regular users unless correct master password
+    const savedUser = {
+      userId,
+      name,
+      email: normalizedEmail,
+      password,
+      userType: finalUserType,
+      createdAt: new Date().toISOString()
+    };
+
+    await minioClient.putObject(bucket, objectName, JSON.stringify(savedUser));
 
     res.json({ 
       message: "Usuario registrado correctamente", 
       userId,
-      userType 
+      userType: savedUser.userType
     });
 
   } catch (err) {
@@ -231,8 +243,9 @@ app.post("/register", async (req, res) => {
 // REGISTRO POR ADMIN
 app.post("/admin/register", async (req, res) => {
   try {
-    const { requesterEmail, name, email, password, userType } = req.body;
+    const { requesterEmail, name, email, password, userType, masterPassword } = req.body;
     const normalizedEmail = typeof email === "string" ? normalizeEmail(email) : "";
+    const MASTER_PASSWORD = "12345";
 
     if (!requesterEmail) {
       return res.status(400).send("requesterEmail es requerido");
@@ -250,6 +263,13 @@ app.post("/admin/register", async (req, res) => {
 
     if (!isValidEmail(normalizedEmail)) {
       return res.status(400).send("Correo invalido");
+    }
+
+    // Validar contraseña maestra si se intenta crear un admin
+    if (userType && String(userType).toLowerCase().trim() === "admin") {
+      if (masterPassword !== MASTER_PASSWORD) {
+        return res.status(403).send("Contraseña maestra incorrecta");
+      }
     }
 
     const objectName = `${normalizedEmail}.json`;
@@ -548,7 +568,12 @@ app.delete("/user/:userId", async (req, res) => {
     const foundUserId = await ensureUserId(foundUser.objectName, foundUser.user);
     const isSelfDelete = requester.requesterId === foundUserId;
 
-    if (!isSelfDelete && !isAdminUser(requester.user)) {
+    // Prevent self-deletion completely
+    if (isSelfDelete) {
+      return res.status(403).send("No puedes eliminar tu propia cuenta");
+    }
+
+    if (!isAdminUser(requester.user)) {
       return res.status(403).send("No autorizado para eliminar este usuario");
     }
 
