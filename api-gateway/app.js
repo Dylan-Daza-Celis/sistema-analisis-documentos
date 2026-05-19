@@ -4,12 +4,20 @@ const { createProxyMiddleware } = require("http-proxy-middleware");
 const app = express();
 const port = process.env.PORT || 8080;
 
+function requireEnv(name) {
+	const value = process.env[name];
+	if (!value) {
+		throw new Error(`${name} es requerido`);
+	}
+	return value;
+}
+
 const services = {
-	auth: process.env.AUTH_SERVICE_URL || "http://auth-service:3000",
-	documents: process.env.DOCUMENT_SERVICE_URL || "http://document-service:3000",
-	classification: process.env.CLASSIFICATION_SERVICE_URL || "http://classification-service:3000",
-	users: process.env.USER_SERVICE_URL || "http://user-service:3000",
-	citations: process.env.CITATION_SERVICE_URL || "http://citation-service:3000"
+	auth: requireEnv("AUTH_SERVICE_URL"),
+	documents: requireEnv("DOCUMENT_SERVICE_URL"),
+	classification: requireEnv("CLASSIFICATION_SERVICE_URL"),
+	users: requireEnv("USER_SERVICE_URL"),
+	citations: requireEnv("CITATION_SERVICE_URL")
 };
 
 app.get("/", (req, res) => {
@@ -17,6 +25,10 @@ app.get("/", (req, res) => {
 		status: "ok",
 		services
 	});
+});
+
+app.get("/health", (req, res) => {
+	res.sendStatus(200);
 });
 
 app.use(

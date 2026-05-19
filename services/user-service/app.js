@@ -5,17 +5,32 @@ const Minio = require("minio");
 const app = express();
 app.use(bodyParser.json());
 
+function requireEnv(name) {
+	const value = process.env[name];
+	if (!value) {
+		throw new Error(`${name} es requerido`);
+	}
+	return value;
+}
+
+const minioEndpoint = requireEnv("MINIO_ENDPOINT");
+const minioPort = Number(process.env.MINIO_PORT || "9000");
+const minioUseSSL = String(process.env.MINIO_USE_SSL || "false").toLowerCase() === "true";
+const minioAccessKey = requireEnv("MINIO_ACCESS_KEY");
+const minioSecretKey = requireEnv("MINIO_SECRET_KEY");
+
 const minioClient = new Minio.Client({
-	endPoint: "minio1",
-	port: 9000,
-	useSSL: false,
-	accessKey: "admin",
-	secretKey: "password123"
+	endPoint: minioEndpoint,
+	port: minioPort,
+	useSSL: minioUseSSL,
+	accessKey: minioAccessKey,
+	secretKey: minioSecretKey
 });
 
 const bucket = "profiles";
-const authServiceUrl = process.env.AUTH_SERVICE_URL || "http://auth-service:3000";
-const classificationServiceUrl = process.env.CLASSIFICATION_SERVICE_URL || "http://classification-service:3000";
+const authServiceUrl = requireEnv("AUTH_SERVICE_URL");
+const classificationServiceUrl = requireEnv("CLASSIFICATION_SERVICE_URL");
+const retryDelayMs = Number(process.env.RETRY_DELAY_MS || "5000");
 
 const defaultThemes = [
 	{ name: "Redes", subthemes: ["Protocolos", "Topologias"] },
@@ -36,6 +51,72 @@ function cloneThemes(themes) {
 		name: theme.name,
 		subthemes: Array.isArray(theme.subthemes) ? [...theme.subthemes] : []
 	}));
+}
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retry(fn, retries = Infinity, delay = retryDelayMs) {
+	let remaining = retries;
+	while (remaining > 0 || retries === Infinity) {
+		try {
+			return await fn();
+		} catch (err) {
+			console.error("Retrying...", err.message);
+			if (retries !== Infinity) {
+				remaining -= 1;
+			}
+			await sleep(delay);
+		}
+	}
+
+	throw new Error("Connection failed");
+}
+
+function bucketExistsAsync() {
+	return new Promise((resolve, reject) => {
+		minioClient.bucketExists(bucket, (err, exists) => {
+			if (err) {
+				return reject(err);
+			}
+			return resolve(exists);
+		});
+	});
+}
+
+function makeBucketAsync() {
+	return new Promise((resolve, reject) => {
+		minioClient.makeBucket(bucket, "us-east-1", (err) => {
+			if (err) {
+				if (err.code === "BucketAlreadyOwnedByYou" || err.code === "BucketAlreadyExists") {
+					return resolve();
+				}
+				return reject(err);
+			}
+			return resolve();
+		});
+	});
+}
+
+async function ensureMinioBucket() {
+	await retry(async () => {
+		const exists = await bucketExistsAsync();
+		if (!exists) {
+			await makeBucketAsync();
+		}
+		return true;
+	});
+}
+
+async function fetchWithRetry(url, options = {}, retries = 3) {
+	return retry(async () => {
+		const response = await fetch(url, options);
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}`);
+		}
+		return response;
+	}, retries, 2000);
 }
 
 function streamToString(stream) {
@@ -91,15 +172,11 @@ async function isAdminRequester(requesterEmail) {
 	}
 
 	try {
-		const response = await fetch(`${authServiceUrl}/user/id`, {
+		const response = await fetchWithRetry(`${authServiceUrl}/user/id`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ email: requesterEmail, requesterEmail })
 		});
-
-		if (!response.ok) {
-			return false;
-		}
 
 		const data = await response.json();
 		const role = String(data.userType || "").trim().toLowerCase();
@@ -112,10 +189,9 @@ async function isAdminRequester(requesterEmail) {
 
 async function themeHasDocuments(userId, themeName) {
 	try {
-		const response = await fetch(`${classificationServiceUrl}/indices/${userId}/tema/${encodeURIComponent(themeName)}`);
-		if (!response.ok) {
-			return false;
-		}
+		const response = await fetchWithRetry(
+			`${classificationServiceUrl}/indices/${userId}/tema/${encodeURIComponent(themeName)}`
+		);
 
 		const data = await response.json();
 		return Number(data.total || 0) > 0;
@@ -135,29 +211,7 @@ function findSubthemeIndex(subthemes, name) {
 	return subthemes.findIndex((sub) => normalizeKey(sub) === target);
 }
 
-// Esperar MinIO
-function waitForMinio(retries = 10) {
-	minioClient.bucketExists(bucket, (err, exists) => {
-		if (err) {
-			console.log("Esperando MinIO en User Service...");
-			if (retries > 0) {
-				setTimeout(() => waitForMinio(retries - 1), 2000);
-			}
-		} else {
-			if (!exists) {
-				minioClient.makeBucket(bucket, "us-east-1", (err) => {
-					if (err) {
-						console.log("Error creando bucket profiles:", err.message);
-					} else {
-						console.log("Bucket 'profiles' creado");
-					}
-				});
-			}
-		}
-	});
-}
-
-waitForMinio();
+ensureMinioBucket();
 
 app.get("/health", (req, res) => {
 	res.json({ status: "ok" });
