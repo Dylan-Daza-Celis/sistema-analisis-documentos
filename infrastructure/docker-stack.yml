@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   gateway:
-    image: ${REGISTRY:-localhost:5000}/api-gateway:latest
+    image: ${REGISTRY}/api-gateway:latest
     ports:
       - "8080:8080"
     environment:
@@ -13,119 +13,318 @@ services:
       USER_SERVICE_URL: http://user-service:3000
       CITATION_SERVICE_URL: http://citation-service:3000
     networks:
-      - app-net
+      - sistema-network
     deploy:
-      replicas: 2
+      replicas: 3
       placement:
         constraints:
-          - node.role == manager
+          - node.role == worker
+        max_replicas_per_node: 1
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   auth-service:
-    image: ${REGISTRY:-localhost:5000}/auth-service:latest
-    ports:
-      - "3001:3000"
+    image: ${REGISTRY}/auth-service:latest
     environment:
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: password123
     networks:
-      - app-net
+      - sistema-network
     deploy:
-      replicas: 1
+      replicas: 3
       placement:
         constraints:
-          - node.labels.role == manager1
+          - node.role == worker
+        max_replicas_per_node: 1
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   user-service:
-    image: ${REGISTRY:-localhost:5000}/user-service:latest
-    ports:
-      - "3004:3000"
+    image: ${REGISTRY}/user-service:latest
     environment:
       AUTH_SERVICE_URL: http://auth-service:3000
       CLASSIFICATION_SERVICE_URL: http://classification-service:3000
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: password123
     networks:
-      - app-net
+      - sistema-network
     deploy:
-      replicas: 1
+      replicas: 3
       placement:
         constraints:
-          - node.labels.role == manager2
+          - node.role == worker
+        max_replicas_per_node: 1
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   document-service:
-    image: ${REGISTRY:-localhost:5000}/document-service:latest
-    ports:
-      - "3002:3000"
+    image: ${REGISTRY}/document-service:latest
+    environment:
+      CLASSIFICATION_SERVICE_URL: http://classification-service:3000
+      KAFKA_BROKERS: kafka1:9092,kafka2:9092,kafka3:9092
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: password123
     networks:
-      - app-net
+      - sistema-network
     deploy:
-      replicas: 1
+      replicas: 3
       placement:
         constraints:
-          - node.labels.role == manager2
+          - node.role == worker
+        max_replicas_per_node: 1
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   classification-service:
-    image: ${REGISTRY:-localhost:5000}/classification-service:latest
-    ports:
-      - "3003:3000"
+    image: ${REGISTRY}/classification-service:latest
     environment:
       HUGGINGFACE_API_TOKEN: ${HUGGINGFACE_API_TOKEN:-}
       ZERO_SHOT_MODEL: ${ZERO_SHOT_MODEL:-MoritzLaurer/mDeBERTa-v3-base-mnli-xnli}
       CLASSIFICATION_THRESHOLD: ${CLASSIFICATION_THRESHOLD:-0.45}
       CLASSIFICATION_MAX_CHARS: ${CLASSIFICATION_MAX_CHARS:-2500}
       USER_SERVICE_URL: http://user-service:3000
+      CLASSIFICATION_MODEL_URL: http://classification-model:5000
+      KAFKA_BROKERS: kafka1:9092,kafka2:9092,kafka3:9092
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: password123
     networks:
-      - app-net
+      - sistema-network
     deploy:
-      replicas: 1
+      replicas: 3
       placement:
         constraints:
-          - node.labels.role == manager3
+          - node.role == worker
+        max_replicas_per_node: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   citation-service:
-    image: ${REGISTRY:-localhost:5000}/citation-service:latest
-    ports:
-      - "3005:3000"
+    image: ${REGISTRY}/citation-service:latest
     networks:
-      - app-net
+      - sistema-network
     deploy:
-      replicas: 1
+      replicas: 2
       placement:
         constraints:
-          - node.labels.role == manager3
+          - node.role == worker
+        max_replicas_per_node: 1
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
-  kafka:
-    image: bitnamilegacy/kafka:3.6
-    ports:
-      - "9092:9092"
+  classification-model:
+    image: ${REGISTRY}/classification-model:latest
+    environment:
+      FLASK_ENV: production
+    networks:
+      - sistema-network
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == worker
+        max_replicas_per_node: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  kafka1:
+    image: bitnami/kafka:3.6
     environment:
       ALLOW_PLAINTEXT_LISTENER: "yes"
-      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_KRAFT_CLUSTER_ID: ${KAFKA_KRAFT_CLUSTER_ID}
+      KAFKA_CFG_NODE_ID: "1"
       KAFKA_CFG_PROCESS_ROLES: "controller,broker"
-      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka1:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "3"
+      KAFKA_CFG_MIN_INSYNC_REPLICAS: "2"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+      KAFKA_CFG_NUM_PARTITIONS: "3"
     networks:
-      - app-net
+      - sistema-network
+    volumes:
+      - /mnt/distributed/kafka1:/bitnami/kafka
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.labels.role == manager1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  kafka2:
+    image: bitnami/kafka:3.6
+    environment:
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_KRAFT_CLUSTER_ID: ${KAFKA_KRAFT_CLUSTER_ID}
+      KAFKA_CFG_NODE_ID: "2"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka2:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "3"
+      KAFKA_CFG_MIN_INSYNC_REPLICAS: "2"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+      KAFKA_CFG_NUM_PARTITIONS: "3"
+    networks:
+      - sistema-network
+    volumes:
+      - /mnt/distributed/kafka2:/bitnami/kafka
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == manager2
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  kafka3:
+    image: bitnami/kafka:3.6
+    environment:
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_KRAFT_CLUSTER_ID: ${KAFKA_KRAFT_CLUSTER_ID}
+      KAFKA_CFG_NODE_ID: "3"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka3:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "3"
+      KAFKA_CFG_MIN_INSYNC_REPLICAS: "2"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+      KAFKA_CFG_NUM_PARTITIONS: "3"
+    networks:
+      - sistema-network
+    volumes:
+      - /mnt/distributed/kafka3:/bitnami/kafka
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == manager3
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
 
   minio:
     image: nginx:1.25-alpine
-    ports:
-      - "9000:9000"
     configs:
       - source: minio_conf
         target: /etc/nginx/conf.d/default.conf
     networks:
-      - app-net
+      - sistema-network
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.labels.role == manager1
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   minio1:
     image: minio/minio
@@ -134,16 +333,28 @@ services:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
     volumes:
-      - minio1-data:/data
+      - /mnt/distributed/minio1:/data
     ports:
       - "9001:9001"
     networks:
-      - app-net
+      - sistema-network
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.labels.role == manager1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   minio2:
     image: minio/minio
@@ -152,14 +363,26 @@ services:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
     volumes:
-      - minio2-data:/data
+      - /mnt/distributed/minio2:/data
     networks:
-      - app-net
+      - sistema-network
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.labels.role == manager2
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   minio3:
     image: minio/minio
@@ -168,14 +391,26 @@ services:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
     volumes:
-      - minio3-data:/data
+      - /mnt/distributed/minio3:/data
     networks:
-      - app-net
+      - sistema-network
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.labels.role == manager3
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   minio4:
     image: minio/minio
@@ -184,25 +419,31 @@ services:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
     volumes:
-      - minio4-data:/data
+      - /mnt/distributed/minio4:/data
     networks:
-      - app-net
+      - sistema-network
     deploy:
       replicas: 1
       placement:
         constraints:
-          - node.labels.role == manager1
+          - node.labels.role == manager3
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 networks:
-  app-net:
-    driver: overlay
+  sistema-network:
+    external: true
 
 configs:
   minio_conf:
     file: ./nginx/minio.conf
-
-volumes:
-  minio1-data:
-  minio2-data:
-  minio3-data:
-  minio4-data:

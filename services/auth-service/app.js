@@ -7,18 +7,37 @@ const jwt = require("jsonwebtoken");
 const app = express();
 app.use(bodyParser.json());
 
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} es requerido`);
+  }
+  return value;
+}
+
+const minioEndpoint = requireEnv("MINIO_ENDPOINT");
+const minioPort = Number(process.env.MINIO_PORT || "9000");
+const minioUseSSL = String(process.env.MINIO_USE_SSL || "false").toLowerCase() === "true";
+const minioAccessKey = requireEnv("MINIO_ACCESS_KEY");
+const minioSecretKey = requireEnv("MINIO_SECRET_KEY");
+
 // Configuración MinIO
 const minioClient = new Minio.Client({
-  endPoint: "minio1",
-  port: 9000,
-  useSSL: false,
-  accessKey: "admin",
-  secretKey: "password123"
+  endPoint: minioEndpoint,
+  port: minioPort,
+  useSSL: minioUseSSL,
+  accessKey: minioAccessKey,
+  secretKey: minioSecretKey
 });
 
 const bucket = "users";
 const jwtSecret = process.env.JWT_SECRET || "dev-secret";
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "8h";
+const retryDelayMs = Number(process.env.RETRY_DELAY_MS || "5000");
+
+app.get("/health", (req, res) => {
+  res.sendStatus(200);
+});
 
 function normalizeEmail(email) {
   return email.trim().toLowerCase();
@@ -133,6 +152,63 @@ function sanitizeUser(user) {
   return rest;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retry(fn, retries = Infinity, delay = retryDelayMs) {
+  let remaining = retries;
+  while (remaining > 0 || retries === Infinity) {
+    try {
+      return await fn();
+    } catch (err) {
+      console.error("Retrying...", err.message);
+      if (retries !== Infinity) {
+        remaining -= 1;
+      }
+      await sleep(delay);
+    }
+  }
+
+  throw new Error("Connection failed");
+}
+
+function bucketExistsAsync() {
+  return new Promise((resolve, reject) => {
+    minioClient.bucketExists(bucket, (err, exists) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve(exists);
+    });
+  });
+}
+
+function makeBucketAsync() {
+  return new Promise((resolve, reject) => {
+    minioClient.makeBucket(bucket, "us-east-1", (err) => {
+      if (err) {
+        if (err.code === "BucketAlreadyOwnedByYou" || err.code === "BucketAlreadyExists") {
+          return resolve();
+        }
+        return reject(err);
+      }
+      return resolve();
+    });
+  });
+}
+
+async function ensureMinioBucket() {
+  await retry(async () => {
+    const exists = await bucketExistsAsync();
+    if (!exists) {
+      await makeBucketAsync();
+    }
+    return true;
+  });
+  console.log("MinIO conectado en Auth Service");
+}
+
 async function getRequesterByEmail(requesterEmail) {
   const normalizedRequesterEmail = typeof requesterEmail === "string" ? normalizeEmail(requesterEmail) : "";
 
@@ -154,33 +230,7 @@ async function getRequesterByEmail(requesterEmail) {
   };
 }
 
-// Esperar a MinIO (IMPORTANTE)
-function waitForMinio(retries = 10) {
-  minioClient.bucketExists(bucket, (err, exists) => {
-    if (err) {
-      console.log("Esperando MinIO en Auth...");
-      if (retries > 0) {
-        setTimeout(() => waitForMinio(retries - 1), 2000);
-      } else {
-        console.log("MinIO no disponible en Auth");
-      }
-    } else {
-      console.log("MinIO conectado en Auth Service");
-
-      if (!exists) {
-        minioClient.makeBucket(bucket, "us-east-1", (err) => {
-          if (err) console.log("Error creando bucket:", err);
-          else console.log("Bucket 'users' creado");
-        });
-      } else {
-        console.log("Bucket ya existe");
-      }
-    }
-  });
-}
-
-// Ejecutar conexión
-waitForMinio();
+ensureMinioBucket();
 
 
 // REGISTRO

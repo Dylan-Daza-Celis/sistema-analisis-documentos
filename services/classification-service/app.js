@@ -5,32 +5,123 @@ const { Kafka } = require("kafkajs");
 
 const app = express();
 
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} es requerido`);
+  }
+  return value;
+}
+
+const minioEndpoint = requireEnv("MINIO_ENDPOINT");
+const minioPort = Number(process.env.MINIO_PORT || "9000");
+const minioUseSSL = String(process.env.MINIO_USE_SSL || "false").toLowerCase() === "true";
+const minioAccessKey = requireEnv("MINIO_ACCESS_KEY");
+const minioSecretKey = requireEnv("MINIO_SECRET_KEY");
+
 // Configuración MinIO
 const minioClient = new Minio.Client({
-  endPoint: "minio1",
-  port: 9000,
-  useSSL: false,
-  accessKey: "admin",
-  secretKey: "password123"
+  endPoint: minioEndpoint,
+  port: minioPort,
+  useSSL: minioUseSSL,
+  accessKey: minioAccessKey,
+  secretKey: minioSecretKey
 });
 
 const bucket = "documents";
+const kafkaBrokers = requireEnv("KAFKA_BROKERS")
+  .split(",")
+  .map((broker) => broker.trim())
+  .filter(Boolean);
 
 // Configuración Kafka
 const kafka = new Kafka({
   clientId: "classification-service",
-  brokers: ["kafka:9092"]
+  brokers: kafkaBrokers
 });
 
 const consumer = kafka.consumer({ groupId: "classification-group" });
 let consumerStarted = false;
+let consumerSubscribed = false;
 let consumerRestartTimer = null;
 const inFlightClassifications = new Set();
 const zeroShotModel = process.env.ZERO_SHOT_MODEL || "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli";
 const hfToken = process.env.HUGGINGFACE_API_TOKEN || "";
 const classificationThreshold = Number(process.env.CLASSIFICATION_THRESHOLD || "0.45");
 const maxCharsForClassifier = Number(process.env.CLASSIFICATION_MAX_CHARS || "2500");
-const userServiceUrl = process.env.USER_SERVICE_URL || "http://user-service:3000";
+const userServiceUrl = requireEnv("USER_SERVICE_URL");
+const classificationModelUrl = requireEnv("CLASSIFICATION_MODEL_URL").replace(/\/$/, "");
+const retryDelayMs = Number(process.env.RETRY_DELAY_MS || "5000");
+
+app.get("/health", (req, res) => {
+  res.sendStatus(200);
+});
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retry(fn, retries = Infinity, delay = retryDelayMs) {
+  let remaining = retries;
+  while (remaining > 0 || retries === Infinity) {
+    try {
+      return await fn();
+    } catch (err) {
+      console.error("Retrying...", err.message);
+      if (retries !== Infinity) {
+        remaining -= 1;
+      }
+      await sleep(delay);
+    }
+  }
+
+  throw new Error("Connection failed");
+}
+
+function bucketExistsAsync() {
+  return new Promise((resolve, reject) => {
+    minioClient.bucketExists(bucket, (err, exists) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve(exists);
+    });
+  });
+}
+
+function makeBucketAsync() {
+  return new Promise((resolve, reject) => {
+    minioClient.makeBucket(bucket, "us-east-1", (err) => {
+      if (err) {
+        if (err.code === "BucketAlreadyOwnedByYou" || err.code === "BucketAlreadyExists") {
+          return resolve();
+        }
+        return reject(err);
+      }
+      return resolve();
+    });
+  });
+}
+
+async function ensureMinioBucket() {
+  await retry(async () => {
+    const exists = await bucketExistsAsync();
+    if (!exists) {
+      await makeBucketAsync();
+    }
+    return true;
+  });
+}
+
+async function fetchWithRetry(url, options = {}, retries = 3) {
+  return retry(async () => {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response;
+  }, retries, 2000);
+}
 
 // Diccionario de temas
 const temas = {
@@ -161,10 +252,7 @@ function extractKeywordsFromText(text, maxKeywords = defaultMaxKeywords) {
 
 async function getUserThemes(userId) {
   try {
-    const response = await fetch(`${userServiceUrl}/themes/${userId}`);
-    if (!response.ok) {
-      return null;
-    }
+    const response = await fetchWithRetry(`${userServiceUrl}/themes/${userId}`);
 
     const data = await response.json();
     return Array.isArray(data.themes) ? data.themes : null;
@@ -285,7 +373,7 @@ async function classifyTextWithPythonModel(text) {
   }
 
   try {
-    const response = await fetch("http://classification-model:5000/classify", {
+    const response = await fetchWithRetry(`${classificationModelUrl}/classify`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -294,11 +382,6 @@ async function classifyTextWithPythonModel(text) {
         text: inputText
       })
     });
-
-    if (!response.ok) {
-      console.error(`Error en classification-model: ${response.status}`);
-      return null;
-    }
 
     const result = await response.json();
 
@@ -702,6 +785,18 @@ function scheduleConsumerRestart(delayMs = 3000) {
   }, delayMs);
 }
 
+async function ensureSubscription() {
+  if (consumerSubscribed) {
+    return;
+  }
+
+  await consumer.subscribe({
+    topic: "documents",
+    fromBeginning: false
+  });
+  consumerSubscribed = true;
+}
+
 // Kafka Consumer
 async function startConsumer() {
   if (consumerStarted) {
@@ -711,11 +806,11 @@ async function startConsumer() {
   consumerStarted = true;
 
   try {
-    await consumer.connect();
-    await consumer.subscribe({ 
-      topic: "documents", 
-      fromBeginning: false // Solo procesa mensajes nuevos, no los anteriores
+    await retry(async () => {
+      await consumer.connect();
+      return true;
     });
+    await ensureSubscription();
 
     console.log("Kafka consumer conectado a topic 'documents'");
 
@@ -790,25 +885,10 @@ consumer.on(consumer.events.CRASH, async (event) => {
   scheduleConsumerRestart();
 });
 
-// Esperar MinIO (igual que en otros servicios)
-function waitForMinio(retries = 10) {
-  minioClient.bucketExists(bucket, (err) => {
-    if (err) {
-      console.log("Esperando MinIO...", err.message);
-      if (retries > 0) {
-        setTimeout(() => waitForMinio(retries - 1), 2000);
-      } else {
-        console.log("MinIO no disponible para clasificación");
-      }
-    } else {
-      console.log("MinIO listo para clasificación");
-      startConsumer(); // IMPORTANTE: iniciar Kafka después
-    }
-  });
-}
-
-// Iniciar proceso
-waitForMinio();
+ensureMinioBucket().then(() => {
+  console.log("MinIO listo para clasificación");
+  startConsumer();
+});
 
 // Endpoint para consultar metadata real en MinIO
 app.get("/metadata/:user/:id", async (req, res) => {

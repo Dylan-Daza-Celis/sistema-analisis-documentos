@@ -7,24 +7,110 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 app.use(express.json());
 
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} es requerido`);
+  }
+  return value;
+}
+
+const minioEndpoint = requireEnv("MINIO_ENDPOINT");
+const minioPort = Number(process.env.MINIO_PORT || "9000");
+const minioUseSSL = String(process.env.MINIO_USE_SSL || "false").toLowerCase() === "true";
+const minioAccessKey = requireEnv("MINIO_ACCESS_KEY");
+const minioSecretKey = requireEnv("MINIO_SECRET_KEY");
+
 //  Configuración MinIO
 const minioClient = new Minio.Client({
-  endPoint: "minio1",
-  port: 9000,
-  useSSL: false,
-  accessKey: "admin",
-  secretKey: "password123"
+  endPoint: minioEndpoint,
+  port: minioPort,
+  useSSL: minioUseSSL,
+  accessKey: minioAccessKey,
+  secretKey: minioSecretKey
 });
 
 const bucket = "documents";
+const classificationServiceUrl = requireEnv("CLASSIFICATION_SERVICE_URL");
+const retryDelayMs = Number(process.env.RETRY_DELAY_MS || "5000");
+const kafkaBrokers = requireEnv("KAFKA_BROKERS")
+  .split(",")
+  .map((broker) => broker.trim())
+  .filter(Boolean);
 
 //  Configuración Kafka
 const kafka = new Kafka({
   clientId: "document-service",
-  brokers: ["kafka:9092"]
+  brokers: kafkaBrokers
 });
 
 const producer = kafka.producer();
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retry(fn, retries = Infinity, delay = retryDelayMs) {
+  let remaining = retries;
+  while (remaining > 0 || retries === Infinity) {
+    try {
+      return await fn();
+    } catch (err) {
+      console.error("Retrying...", err.message);
+      if (retries !== Infinity) {
+        remaining -= 1;
+      }
+      await sleep(delay);
+    }
+  }
+
+  throw new Error("Connection failed");
+}
+
+function bucketExistsAsync() {
+  return new Promise((resolve, reject) => {
+    minioClient.bucketExists(bucket, (err, exists) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve(exists);
+    });
+  });
+}
+
+function makeBucketAsync() {
+  return new Promise((resolve, reject) => {
+    minioClient.makeBucket(bucket, "us-east-1", (err) => {
+      if (err) {
+        if (err.code === "BucketAlreadyOwnedByYou" || err.code === "BucketAlreadyExists") {
+          return resolve();
+        }
+        return reject(err);
+      }
+      return resolve();
+    });
+  });
+}
+
+async function ensureMinioBucket() {
+  await retry(async () => {
+    const exists = await bucketExistsAsync();
+    if (!exists) {
+      await makeBucketAsync();
+    }
+    return true;
+  });
+}
+
+async function fetchWithRetry(url, options = {}, retries = 3) {
+  return retry(async () => {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response;
+  }, retries, 2000);
+}
 function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -55,14 +141,10 @@ async function readJsonObject(path, fallbackValue = null) {
 
 async function removeFromIndex(userId, id) {
   try {
-    const response = await fetch(
-      `http://classification-service:3000/indices/${userId}/document/${id}`,
+    const response = await fetchWithRetry(
+      `${classificationServiceUrl}/indices/${userId}/document/${id}`,
       { method: "DELETE" }
     );
-
-    if (!response.ok) {
-      console.log(`No se pudo actualizar indice (${response.status})`);
-    }
   } catch (err) {
     console.log("Error llamando a classification-service para indice:", err.message);
   }
@@ -70,12 +152,11 @@ async function removeFromIndex(userId, id) {
 
 //  Conectar Kafka una sola vez
 async function initKafka() {
-  try {
+  await retry(async () => {
     await producer.connect();
-    console.log("Kafka conectado");
-  } catch (err) {
-    console.error("Error conectando a Kafka:", err);
-  }
+    return true;
+  });
+  console.log("Kafka conectado");
 }
 
 initKafka();
@@ -83,12 +164,15 @@ initKafka();
 // Función para enviar evento
 async function sendEvent(data) {
   try {
-    await producer.send({
-      topic: "documents",
-      messages: [
-        { value: JSON.stringify(data) }
-      ]
-    });
+    await retry(async () => {
+      await producer.send({
+        topic: "documents",
+        messages: [
+          { value: JSON.stringify(data) }
+        ]
+      });
+      return true;
+    }, 5, 2000);
 
     console.log("Evento enviado a Kafka:", data);
   } catch (err) {
@@ -96,33 +180,11 @@ async function sendEvent(data) {
   }
 }
 
-// Esperar a que MinIO esté listo
-function waitForMinio(retries = 10) {
-  minioClient.bucketExists(bucket, (err, exists) => {
-    if (err) {
-      console.log("Esperando MinIO...");
-      if (retries > 0) {
-        setTimeout(() => waitForMinio(retries - 1), 2000);
-      } else {
-        console.log("MinIO no disponible después de varios intentos");
-      }
-    } else {
-      console.log("MinIO conectado");
+ensureMinioBucket();
 
-      if (!exists) {
-        minioClient.makeBucket(bucket, "us-east-1", (err) => {
-          if (err) console.log("Error creando bucket:", err);
-          else console.log("Bucket 'documents' creado");
-        });
-      } else {
-        console.log("Bucket ya existe");
-      }
-    }
-  });
-}
-
-// Ejecutar conexión a MinIO
-waitForMinio();
+app.get("/health", (req, res) => {
+  res.sendStatus(200);
+});
 
 // Endpoint para subir documento
 app.post("/upload", upload.single("file"), async (req, res) => {
