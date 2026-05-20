@@ -88,7 +88,7 @@ services:
           - node.hostname == diego
 
   gateway:
-    build: ../api-gateway
+    image: infrastructure-gateway:latest
     ports:
       - "8080:8080"
     environment:
@@ -117,7 +117,7 @@ services:
       retries: 5
 
   auth-service:
-    build: ../services/auth-service
+    image: infrastructure-auth-service:latest
     environment:
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
@@ -139,7 +139,7 @@ services:
       retries: 5
 
   user-service:
-    build: ../services/user-service
+    image: infrastructure-user-service:latest
     environment:
       AUTH_SERVICE_URL: http://auth-service:3000
       CLASSIFICATION_SERVICE_URL: http://classification-service:3000
@@ -165,7 +165,7 @@ services:
       retries: 5
 
   document-service:
-    build: ../services/document-service
+    build: document-service
     environment:
       CLASSIFICATION_SERVICE_URL: http://classification-service:3000
       KAFKA_BROKERS: kafka1:9092,kafka2:9092,kafka3:9092
@@ -192,7 +192,7 @@ services:
       retries: 5
 
   classification-service:
-    build: ../services/classification-service
+    image: infrastructure-classification-service:latest
     environment:
       HUGGINGFACE_API_TOKEN: ${HUGGINGFACE_API_TOKEN:-}
       ZERO_SHOT_MODEL: ${ZERO_SHOT_MODEL:-MoritzLaurer/mDeBERTa-v3-base-mnli-xnli}
@@ -225,7 +225,7 @@ services:
       retries: 5
 
   citation-service:
-    build: ../services/citation-service
+    image: infrastructure-citation-service:latest
     networks:
       - sistema-network
     deploy:
@@ -335,9 +335,7 @@ services:
       retries: 10
 
   classification-model:
-    build:
-      context: ../services/classification-model-service
-      dockerfile: Dockerfile
+    image: infrastructure-classification-service:latest
     environment:
       FLASK_ENV: production
     networks:
