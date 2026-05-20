@@ -165,7 +165,7 @@ services:
       retries: 5
 
   document-service:
-    build: document-service
+    image: infrastructure-document-service:latest
     environment:
       CLASSIFICATION_SERVICE_URL: http://classification-service:3000
       KAFKA_BROKERS: kafka1:9092,kafka2:9092,kafka3:9092
@@ -335,7 +335,7 @@ services:
       retries: 10
 
   classification-model:
-    image: infrastructure-classification-service:latest
+    image: infrastructure-classification-model:latest
     environment:
       FLASK_ENV: production
     networks:
