@@ -232,7 +232,7 @@ services:
     networks:
       - sistema-network
     volumes:
-      - kafka1_data:/mnt/distributed/kafka1:/var/lib/kafka/data
+      - /mnt/distributed/kafka1:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
       interval: 10s
@@ -262,7 +262,7 @@ services:
     networks:
       - sistema-network
     volumes:
-      - kafka2_data:/mnt/distributed/kafka2:/var/lib/kafka/data
+      - /mnt/distributed/kafka2:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
       interval: 10s
@@ -292,7 +292,7 @@ services:
     networks:
       - sistema-network
     volumes:
-      - kafka3_data:/mnt/distributed/kafka3:/var/lib/kafka/data
+      - /mnt/distributed/kafka3:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
       interval: 10s
@@ -320,8 +320,3 @@ networks:
   sistema-network:
     name: sistema-network
     driver: bridge
-
-volumes:
-  kafka1_data:
-  kafka2_data:
-  kafka3_data:
