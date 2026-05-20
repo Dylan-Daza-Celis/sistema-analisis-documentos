@@ -22,6 +22,7 @@ services:
   minio1:
     image: minio/minio
     container_name: minio1
+    hostname: minio1
     command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
@@ -37,6 +38,7 @@ services:
   minio2:
     image: minio/minio
     container_name: minio2
+    hostname: minio2
     command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
@@ -50,6 +52,7 @@ services:
   minio3:
     image: minio/minio
     container_name: minio3
+    hostname: minio3
     command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
@@ -63,6 +66,7 @@ services:
   minio4:
     image: minio/minio
     container_name: minio4
+    hostname: minio4
     command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
@@ -207,90 +211,90 @@ services:
     restart: on-failure
 
   kafka1:
-    image: bitnami/kafka:3.6
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka1
+    hostname: kafka1
+    ports:
+      - "9092:9092"
     environment:
-      ALLOW_PLAINTEXT_LISTENER: "yes"
-      KAFKA_KRAFT_CLUSTER_ID: ${KAFKA_KRAFT_CLUSTER_ID}
-      KAFKA_CFG_NODE_ID: "1"
-      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
-      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka1:9092"
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
-      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "3"
-      KAFKA_CFG_MIN_INSYNC_REPLICAS: "2"
-      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
-      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
-      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "2"
-      KAFKA_CFG_NUM_PARTITIONS: "3"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: ${KAFKA_KRAFT_CLUSTER_ID}
     networks:
       - sistema-network
     volumes:
-      - /mnt/distributed/kafka1:/bitnami/kafka
+      - kafka1_data:/mnt/distributed/kafka1:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
     restart: on-failure
 
   kafka2:
-    image: bitnami/kafka:3.6
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka2
+    hostname: kafka2
+    ports:
+      - "9093:9092"
     environment:
-      ALLOW_PLAINTEXT_LISTENER: "yes"
-      KAFKA_KRAFT_CLUSTER_ID: ${KAFKA_KRAFT_CLUSTER_ID}
-      KAFKA_CFG_NODE_ID: "2"
-      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
-      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka2:9092"
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
-      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "3"
-      KAFKA_CFG_MIN_INSYNC_REPLICAS: "2"
-      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
-      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
-      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "2"
-      KAFKA_CFG_NUM_PARTITIONS: "3"
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: ${KAFKA_KRAFT_CLUSTER_ID}
     networks:
       - sistema-network
     volumes:
-      - /mnt/distributed/kafka2:/bitnami/kafka
+      - kafka2_data:/mnt/distributed/kafka2:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
     restart: on-failure
 
   kafka3:
-    image: bitnami/kafka:3.6
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka3
+    hostname: kafka3
+    ports:
+      - "9094:9092"
     environment:
-      ALLOW_PLAINTEXT_LISTENER: "yes"
-      KAFKA_KRAFT_CLUSTER_ID: ${KAFKA_KRAFT_CLUSTER_ID}
-      KAFKA_CFG_NODE_ID: "3"
-      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
-      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka3:9092"
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093"
-      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "3"
-      KAFKA_CFG_MIN_INSYNC_REPLICAS: "2"
-      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
-      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
-      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "2"
-      KAFKA_CFG_NUM_PARTITIONS: "3"
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: ${KAFKA_KRAFT_CLUSTER_ID}
     networks:
       - sistema-network
     volumes:
-      - /mnt/distributed/kafka3:/bitnami/kafka
+      - kafka3_data:/mnt/distributed/kafka3:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -316,3 +320,8 @@ networks:
   sistema-network:
     name: sistema-network
     driver: bridge
+
+volumes:
+  kafka1_data:
+  kafka2_data:
+  kafka3_data:
