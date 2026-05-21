@@ -16,7 +16,7 @@ services:
         constraints:
           - node.hostname == dylan
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/minio/health/live"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -124,7 +124,7 @@ services:
       JWT_SECRET: dev-secret
       JWT_EXPIRES_IN: 8h
       MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
+      MINIO_PORT: 80
       MINIO_USE_SSL: "false"
       MINIO_ACCESS_KEY: admin
       MINIO_SECRET_KEY: password123
@@ -147,7 +147,7 @@ services:
       AUTH_SERVICE_URL: http://auth-service:3000
       CLASSIFICATION_SERVICE_URL: http://classification-service:3000
       MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
+      MINIO_PORT: 80
       MINIO_USE_SSL: "false"
       MINIO_ACCESS_KEY: admin
       MINIO_SECRET_KEY: password123
@@ -172,9 +172,9 @@ services:
     image: infrastructure-document-service:latest
     environment:
       CLASSIFICATION_SERVICE_URL: http://classification-service:3000
-      KAFKA_BROKERS: kafka1:9092,kafka2:9092,kafka3:9092
+      KAFKA_BROKERS: sistema_kafka1:9092,sistema_kafka2:9092,sistema_kafka3:9092
       MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
+      MINIO_PORT: 80
       MINIO_USE_SSL: "false"
       MINIO_ACCESS_KEY: admin
       MINIO_SECRET_KEY: password123
@@ -205,9 +205,9 @@ services:
       CLASSIFICATION_MAX_CHARS: "2500"
       USER_SERVICE_URL: http://user-service:3000
       CLASSIFICATION_MODEL_URL: http://classification-model:5000
-      KAFKA_BROKERS: kafka1:9092,kafka2:9092,kafka3:9092
+      KAFKA_BROKERS: sistema_kafka1:9092,sistema_kafka2:9092,sistema_kafka3:9092
       MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
+      MINIO_PORT: 80
       MINIO_USE_SSL: "false"
       MINIO_ACCESS_KEY: admin
       MINIO_SECRET_KEY: password123
@@ -247,7 +247,7 @@ services:
 
   kafka1:
     image: confluentinc/cp-kafka:7.6.1
-    hostname: kafka1
+    hostname: sistema_kafka1
     ports:
       - "9092:9092"
     environment:
@@ -255,10 +255,10 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://sistema_kafka1:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@sistema_kafka1:9093,2@sistema_kafka2:9093,3@sistema_kafka3:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
@@ -281,7 +281,7 @@ services:
 
   kafka2:
     image: confluentinc/cp-kafka:7.6.1
-    hostname: kafka2
+    hostname: sistema_kafka2
     ports:
       - "9093:9092"
     environment:
@@ -289,10 +289,10 @@ services:
       KAFKA_NODE_ID: 2
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://sistema_kafka2:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@sistema_kafka1:9093,2@sistema_kafka2:9093,3@sistema_kafka3:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
@@ -315,7 +315,7 @@ services:
 
   kafka3:
     image: confluentinc/cp-kafka:7.6.1
-    hostname: kafka3
+    hostname: sistema_kafka3
     ports:
       - "9094:9092"
     environment:
@@ -323,10 +323,10 @@ services:
       KAFKA_NODE_ID: 3
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://sistema_kafka3:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@sistema_kafka1:9093,2@sistema_kafka2:9093,3@sistema_kafka3:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
