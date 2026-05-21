@@ -205,87 +205,105 @@ services:
 
   kafka1:
     image: confluentinc/cp-kafka:7.6.1
-    hostname: sistema_kafka1
+    hostname: kafka1
+
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://10.17.139.201:9092"
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@10.17.139.201:9093,2@10.17.139.202:9093,3@10.17.139.203:9093"
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      CLUSTER_ID: "kraft-cluster-1"
+
     ports:
       - "9092:9092"
-    environment:
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
-      KAFKA_NODE_ID: "1"
-      KAFKA_PROCESS_ROLES: "broker,controller"
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://sistema_kafka1:9092"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@sistema_kafka1:9093,2@sistema_kafka2:9093,3@sistema_kafka3:9093"
-      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+
     volumes:
       - /mnt/distributed/kafka1:/var/lib/kafka/data
+
     networks:
       - sistema-network
-    deploy:
-      placement:
-        constraints:
-          - node.hostname == dylan
 
   kafka2:
     image: confluentinc/cp-kafka:7.6.1
-    hostname: sistema_kafka2
+    hostname: kafka2
+
+    environment:
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://10.17.139.202:9092"
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@10.17.139.201:9093,2@10.17.139.202:9093,3@10.17.139.203:9093"
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      CLUSTER_ID: "kraft-cluster-1"
+
     ports:
       - "9093:9092"
-    environment:
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
-      KAFKA_NODE_ID: "2"
-      KAFKA_PROCESS_ROLES: "broker,controller"
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://sistema_kafka2:9092"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@sistema_kafka1:9093,2@sistema_kafka2:9093,3@sistema_kafka3:9093"
-      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+
     volumes:
       - /mnt/distributed/kafka2:/var/lib/kafka/data
-    networks:
-      - sistema-network
-    deploy:
-      placement:
-        constraints:
-          - node.hostname == victor
 
-  kafka3:
-    image: confluentinc/cp-kafka:7.6.1
-    hostname: sistema_kafka3
-    ports:
-      - "9094:9092"
-    environment:
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
-      KAFKA_NODE_ID: "3"
-      KAFKA_PROCESS_ROLES: "broker,controller"
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://sistema_kafka3:9092"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@sistema_kafka1:9093,2@sistema_kafka2:9093,3@sistema_kafka3:9093"
-      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
-    volumes:
-      - /mnt/distributed/kafka3:/var/lib/kafka/data
     networks:
       - sistema-network
-    deploy:
-      placement:
-        constraints:
-          - node.hostname == diego
+
+    kafka3:
+      image: confluentinc/cp-kafka:7.6.1
+      hostname: kafka3
+
+      environment:
+        KAFKA_NODE_ID: 3
+        KAFKA_PROCESS_ROLES: broker,controller
+
+        KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+
+        KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://10.17.139.203:9092"
+
+        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+
+        KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+
+        KAFKA_CONTROLLER_QUORUM_VOTERS: "1@10.17.139.201:9093,2@10.17.139.202:9093,3@10.17.139.203:9093"
+
+        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+        KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+        KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+        KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+        CLUSTER_ID: "kraft-cluster-1"
+
+      ports:
+        - "9094:9092"
+
+      volumes:
+        - /mnt/distributed/kafka3:/var/lib/kafka/data
+
+      networks:
+        - sistema-network
 
   classification-model:
     image: infrastructure-classification-model:latest
