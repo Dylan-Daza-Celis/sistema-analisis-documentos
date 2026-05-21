@@ -18,7 +18,7 @@ services:
   minio1:
     image: minio/minio:latest
     hostname: minio1
-    command: server http://minio1/data http://minio3/data http://minio4/data --console-address ":9001"
+    command: server http://sistema_minio1/data http://sistema_minio3/data http://sistema_minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
@@ -36,7 +36,7 @@ services:
   minio3:
     image: minio/minio:latest
     hostname: minio3
-    command: server http://minio1/data http://minio3/data http://minio4/data --console-address ":9001"
+    command: server http://sistema_minio1/data http://sistema_minio3/data http://sistema_minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
@@ -52,7 +52,7 @@ services:
   minio4:
     image: minio/minio:latest
     hostname: minio4
-    command: server http://minio1/data http://minio3/data http://minio4/data --console-address ":9001"
+    command: server http://sistema_minio1/data http://sistema_minio3/data http://sistema_minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
