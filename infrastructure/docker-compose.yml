@@ -19,10 +19,11 @@ services:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 60s
 
   minio1:
-    image: minio/minio
+    image: minio/minio:latest
     hostname: minio1
     command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
@@ -40,7 +41,7 @@ services:
           - node.hostname == dylan
 
   minio2:
-    image: minio/minio
+    image: minio/minio:latest
     hostname: minio2
     command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
@@ -56,7 +57,7 @@ services:
           - node.hostname == victor
 
   minio3:
-    image: minio/minio
+    image: minio/minio:latest
     hostname: minio3
     command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
@@ -72,7 +73,7 @@ services:
           - node.hostname == diego
 
   minio4:
-    image: minio/minio
+    image: minio/minio:latest
     hostname: minio4
     command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
@@ -114,13 +115,14 @@ services:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   auth-service:
     image: infrastructure-auth-service:latest
     environment:
-      JWT_SECRET: ${JWT_SECRET:-dev-secret}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      JWT_SECRET: dev-secret
+      JWT_EXPIRES_IN: 8h
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
       MINIO_USE_SSL: "false"
@@ -136,7 +138,8 @@ services:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   user-service:
     image: infrastructure-user-service:latest
@@ -162,7 +165,8 @@ services:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   document-service:
     image: infrastructure-document-service:latest
@@ -189,15 +193,16 @@ services:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   classification-service:
     image: infrastructure-classification-service:latest
     environment:
-      HUGGINGFACE_API_TOKEN: ${HUGGINGFACE_API_TOKEN:-}
-      ZERO_SHOT_MODEL: ${ZERO_SHOT_MODEL:-MoritzLaurer/mDeBERTa-v3-base-mnli-xnli}
-      CLASSIFICATION_THRESHOLD: ${CLASSIFICATION_THRESHOLD:-0.45}
-      CLASSIFICATION_MAX_CHARS: ${CLASSIFICATION_MAX_CHARS:-2500}
+      HUGGINGFACE_API_TOKEN: ""
+      ZERO_SHOT_MODEL: MoritzLaurer/mDeBERTa-v3-base-mnli-xnli
+      CLASSIFICATION_THRESHOLD: "0.45"
+      CLASSIFICATION_MAX_CHARS: "2500"
       USER_SERVICE_URL: http://user-service:3000
       CLASSIFICATION_MODEL_URL: http://classification-model:5000
       KAFKA_BROKERS: kafka1:9092,kafka2:9092,kafka3:9092
@@ -222,7 +227,8 @@ services:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   citation-service:
     image: infrastructure-citation-service:latest
@@ -236,7 +242,8 @@ services:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   kafka1:
     image: confluentinc/cp-kafka:7.6.1
@@ -244,6 +251,7 @@ services:
     ports:
       - "9092:9092"
     environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
@@ -251,11 +259,11 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     networks:
       - sistema-network
     volumes:
@@ -265,10 +273,11 @@ services:
         constraints:
           - node.hostname == dylan
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 120s
 
   kafka2:
     image: confluentinc/cp-kafka:7.6.1
@@ -276,6 +285,7 @@ services:
     ports:
       - "9093:9092"
     environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
       KAFKA_NODE_ID: 2
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
@@ -283,11 +293,11 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     networks:
       - sistema-network
     volumes:
@@ -297,10 +307,11 @@ services:
         constraints:
           - node.hostname == victor
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 120s
 
   kafka3:
     image: confluentinc/cp-kafka:7.6.1
@@ -308,6 +319,7 @@ services:
     ports:
       - "9094:9092"
     environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
       KAFKA_NODE_ID: 3
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
@@ -315,11 +327,11 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     networks:
       - sistema-network
     volumes:
@@ -329,10 +341,11 @@ services:
         constraints:
           - node.hostname == diego
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 120s
 
   classification-model:
     image: infrastructure-classification-model:latest
@@ -348,7 +361,8 @@ services:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
 networks:
   sistema-network:
