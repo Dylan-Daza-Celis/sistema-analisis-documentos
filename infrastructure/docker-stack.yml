@@ -271,39 +271,39 @@ services:
     networks:
       - sistema-network
 
-    kafka3:
-      image: confluentinc/cp-kafka:7.6.1
-      hostname: kafka3
+  kafka3:
+    image: confluentinc/cp-kafka:7.6.1
+    hostname: kafka3
 
-      environment:
-        KAFKA_NODE_ID: 3
-        KAFKA_PROCESS_ROLES: broker,controller
+    environment:
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker,controller
 
-        KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
 
-        KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://10.17.139.203:9092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://10.17.139.203:9092"
 
-        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
 
-        KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
 
-        KAFKA_CONTROLLER_QUORUM_VOTERS: "1@10.17.139.201:9093,2@10.17.139.202:9093,3@10.17.139.203:9093"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@10.17.139.201:9093,2@10.17.139.202:9093,3@10.17.139.203:9093"
 
-        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-        KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-        KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-        KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
-        CLUSTER_ID: "kraft-cluster-1"
+      CLUSTER_ID: "kraft-cluster-1"
 
-      ports:
-        - "9094:9092"
+    ports:
+      - "9094:9092"
 
-      volumes:
-        - /mnt/distributed/kafka3:/var/lib/kafka/data
+    volumes:
+      - /mnt/distributed/kafka3:/var/lib/kafka/data
 
-      networks:
-        - sistema-network
+    networks:
+      - sistema-network
 
   classification-model:
     image: infrastructure-classification-model:latest
