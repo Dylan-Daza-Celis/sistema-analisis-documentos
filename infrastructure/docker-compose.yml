@@ -1,13 +1,97 @@
-version: "3.9"
-
 services:
 
-  gateway:
-    image: infrastructure-gateway:latest
+  minio:
+    image: "nginx:1.25-alpine"
+    volumes:
+      - ./nginx/minio.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - minio1
+      - minio2
+      - minio3
+      - minio4
+    networks:
+      - sistema-network
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == dylan
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
 
+  minio1:
+    image: "minio/minio:latest"
+    hostname: minio1
+    command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "admin"
+      MINIO_ROOT_PASSWORD: "password123"
+    volumes:
+      - /mnt/distributed/minio1:/data
+    ports:
+      - "9001:9001"
+    networks:
+      - sistema-network
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == dylan
+
+  minio2:
+    image: "minio/minio:latest"
+    hostname: minio2
+    command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "admin"
+      MINIO_ROOT_PASSWORD: "password123"
+    volumes:
+      - /mnt/distributed/minio2:/data
+    networks:
+      - sistema-network
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == victor
+
+  minio3:
+    image: "minio/minio:latest"
+    hostname: minio3
+    command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "admin"
+      MINIO_ROOT_PASSWORD: "password123"
+    volumes:
+      - /mnt/distributed/minio3:/data
+    networks:
+      - sistema-network
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == diego
+
+  minio4:
+    image: "minio/minio:latest"
+    hostname: minio4
+    command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "admin"
+      MINIO_ROOT_PASSWORD: "password123"
+    volumes:
+      - /mnt/distributed/minio4:/data
+    networks:
+      - sistema-network
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == diego
+
+  gateway:
+    image: "infrastructure-gateway:latest"
     ports:
       - "8080:8080"
-
     environment:
       PORT: "8080"
       AUTH_SERVICE_URL: "http://auth-service:3000"
@@ -15,211 +99,270 @@ services:
       CLASSIFICATION_SERVICE_URL: "http://classification-service:3000"
       USER_SERVICE_URL: "http://user-service:3000"
       CITATION_SERVICE_URL: "http://citation-service:3000"
-
+    depends_on:
+      - auth-service
+      - document-service
+      - classification-service
+      - user-service
+      - citation-service
     networks:
       - sistema-network
-
     deploy:
       placement:
         constraints:
           - node.hostname == dylan
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   auth-service:
-    image: infrastructure-auth-service:latest
-
+    image: "infrastructure-auth-service:latest"
     environment:
       JWT_SECRET: "dev-secret"
       JWT_EXPIRES_IN: "8h"
-
       MINIO_ENDPOINT: "minio"
-      MINIO_PORT: "9000"
-
+      MINIO_PORT: "80"
       MINIO_USE_SSL: "false"
-
       MINIO_ACCESS_KEY: "admin"
       MINIO_SECRET_KEY: "password123"
-
     networks:
       - sistema-network
-
     deploy:
       placement:
         constraints:
           - node.hostname == diego
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   user-service:
-    image: infrastructure-user-service:latest
-
+    image: "infrastructure-user-service:latest"
     environment:
       AUTH_SERVICE_URL: "http://auth-service:3000"
       CLASSIFICATION_SERVICE_URL: "http://classification-service:3000"
-
       MINIO_ENDPOINT: "minio"
-      MINIO_PORT: "9000"
-
+      MINIO_PORT: "80"
       MINIO_USE_SSL: "false"
-
       MINIO_ACCESS_KEY: "admin"
       MINIO_SECRET_KEY: "password123"
-
+    depends_on:
+      - minio
+      - auth-service
+      - classification-service
     networks:
       - sistema-network
-
     deploy:
       placement:
         constraints:
           - node.hostname == diego
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   document-service:
-    image: infrastructure-document-service:latest
-
+    image: "infrastructure-document-service:latest"
     environment:
       CLASSIFICATION_SERVICE_URL: "http://classification-service:3000"
-
-      KAFKA_BROKERS: "10.17.139.201:9092"
-
+      KAFKA_BROKERS: "sistema_kafka1:9092,sistema_kafka2:9092,sistema_kafka3:9092"
       MINIO_ENDPOINT: "minio"
-      MINIO_PORT: "9000"
-
+      MINIO_PORT: "80"
       MINIO_USE_SSL: "false"
-
       MINIO_ACCESS_KEY: "admin"
       MINIO_SECRET_KEY: "password123"
-
+    depends_on:
+      - minio
+      - kafka1
+      - kafka2
+      - kafka3
     networks:
       - sistema-network
-
     deploy:
       placement:
         constraints:
           - node.hostname == diego
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   classification-service:
-    image: infrastructure-classification-service:latest
-
+    image: "infrastructure-classification-service:latest"
     environment:
       HUGGINGFACE_API_TOKEN: ""
       ZERO_SHOT_MODEL: "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
-
       CLASSIFICATION_THRESHOLD: "0.45"
       CLASSIFICATION_MAX_CHARS: "2500"
-
       USER_SERVICE_URL: "http://user-service:3000"
-
       CLASSIFICATION_MODEL_URL: "http://classification-model:5000"
-
-      KAFKA_BROKERS: "10.17.139.201:9092"
-
+      KAFKA_BROKERS: "sistema_kafka1:9092,sistema_kafka2:9092,sistema_kafka3:9092"
       MINIO_ENDPOINT: "minio"
-      MINIO_PORT: "9000"
-
+      MINIO_PORT: "80"
       MINIO_USE_SSL: "false"
-
       MINIO_ACCESS_KEY: "admin"
       MINIO_SECRET_KEY: "password123"
-
+    depends_on:
+      - minio
+      - kafka1
+      - kafka2
+      - kafka3
+      - classification-model
     networks:
       - sistema-network
-
     deploy:
       placement:
         constraints:
-          - node.hostname == dylan
+          - node.hostname == victor
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   citation-service:
-    image: infrastructure-citation-service:latest
-
+    image: "infrastructure-citation-service:latest"
     networks:
       - sistema-network
-
     deploy:
       placement:
         constraints:
           - node.hostname == diego
-
-  classification-model:
-    image: infrastructure-classification-model:latest
-
-    environment:
-      FLASK_ENV: "production"
-
-    networks:
-      - sistema-network
-
-    deploy:
-      placement:
-        constraints:
-          - node.hostname == dylan
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   kafka1:
-    image: confluentinc/cp-kafka:7.6.1
-
-    hostname: kafka1
-
+    image: "confluentinc/cp-kafka:7.6.1"
+    hostname: sistema_kafka1
     ports:
       - "9092:9092"
-
     environment:
-      CLUSTER_ID: "kraft-cluster-1"
-
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
       KAFKA_NODE_ID: "1"
-
       KAFKA_PROCESS_ROLES: "broker,controller"
-
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
-
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://10.17.139.201:9092"
-
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://sistema_kafka1:9092"
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@10.17.139.201:9093"
-
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@sistema_kafka1:9093,2@sistema_kafka2:9093,3@sistema_kafka3:9093"
       KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
-
-    volumes:
-      - /mnt/distributed/kafka1:/var/lib/kafka/data
-
     networks:
       - sistema-network
-
+    volumes:
+      - /mnt/distributed/kafka1:/var/lib/kafka/data
     deploy:
       placement:
         constraints:
           - node.hostname == dylan
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 120s
 
-  minio:
-    image: minio/minio:latest
-
-    command: server /data --console-address ":9001"
-
-    environment:
-      MINIO_ROOT_USER: "admin"
-      MINIO_ROOT_PASSWORD: "password123"
-
+  kafka2:
+    image: "confluentinc/cp-kafka:7.6.1"
+    hostname: sistema_kafka2
     ports:
-      - "9000:9000"
-      - "9001:9001"
-
-    volumes:
-      - /mnt/distributed/minio:/data
-
+      - "9093:9092"
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_NODE_ID: "2"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://sistema_kafka2:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@sistema_kafka1:9093,2@sistema_kafka2:9093,3@sistema_kafka3:9093"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
     networks:
       - sistema-network
+    volumes:
+      - /mnt/distributed/kafka2:/var/lib/kafka/data
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == victor
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 120s
 
+  kafka3:
+    image: "confluentinc/cp-kafka:7.6.1"
+    hostname: sistema_kafka3
+    ports:
+      - "9094:9092"
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_NODE_ID: "3"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://sistema_kafka3:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@sistema_kafka1:9093,2@sistema_kafka2:9093,3@sistema_kafka3:9093"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+    networks:
+      - sistema-network
+    volumes:
+      - /mnt/distributed/kafka3:/var/lib/kafka/data
     deploy:
       placement:
         constraints:
           - node.hostname == diego
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 120s
+
+  classification-model:
+    image: "infrastructure-classification-model:latest"
+    environment:
+      FLASK_ENV: "production"
+    networks:
+      - sistema-network
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == victor
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
 networks:
   sistema-network:
