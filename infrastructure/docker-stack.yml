@@ -6,7 +6,6 @@ services:
       - ./nginx/minio.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - minio1
-      - minio2
       - minio3
       - minio4
     networks:
@@ -19,7 +18,7 @@ services:
   minio1:
     image: minio/minio:latest
     hostname: minio1
-    command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
+    command: server http://minio1/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
@@ -34,26 +33,10 @@ services:
         constraints:
           - node.hostname == dylan
 
-  minio2:
-    image: minio/minio:latest
-    hostname: minio2
-    command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password123
-    volumes:
-      - /mnt/distributed/minio2:/data
-    networks:
-      - sistema-network
-    deploy:
-      placement:
-        constraints:
-          - node.hostname == victor
-
   minio3:
     image: minio/minio:latest
     hostname: minio3
-    command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
+    command: server http://minio1/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
@@ -69,7 +52,7 @@ services:
   minio4:
     image: minio/minio:latest
     hostname: minio4
-    command: server http://minio1/data http://minio2/data http://minio3/data http://minio4/data --console-address ":9001"
+    command: server http://minio1/data http://minio3/data http://minio4/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: password123
@@ -148,7 +131,7 @@ services:
     image: infrastructure-document-service:latest
     environment:
       CLASSIFICATION_SERVICE_URL: "http://classification-service:3000"
-      KAFKA_BROKERS: "sistema_kafka1:9092,sistema_kafka2:9092,sistema_kafka3:9092"
+      KAFKA_BROKERS: "192.168.100.201:9092,192.168.100.203:9092"
       MINIO_ENDPOINT: "minio"
       MINIO_PORT: "80"
       MINIO_USE_SSL: "false"
@@ -157,7 +140,6 @@ services:
     depends_on:
       - minio
       - kafka1
-      - kafka2
       - kafka3
     networks:
       - sistema-network
@@ -175,7 +157,7 @@ services:
       CLASSIFICATION_MAX_CHARS: "2500"
       USER_SERVICE_URL: "http://user-service:3000"
       CLASSIFICATION_MODEL_URL: "http://classification-model:5000"
-      KAFKA_BROKERS: "sistema_kafka1:9092,sistema_kafka2:9092,sistema_kafka3:9092"
+      KAFKA_BROKERS: "192.168.100.201:9092,192.168.100.203:9092"
       MINIO_ENDPOINT: "minio"
       MINIO_PORT: "80"
       MINIO_USE_SSL: "false"
@@ -184,7 +166,6 @@ services:
     depends_on:
       - minio
       - kafka1
-      - kafka2
       - kafka3
       - classification-model
     networks:
@@ -192,7 +173,7 @@ services:
     deploy:
       placement:
         constraints:
-          - node.hostname == victor
+          - node.hostname == diego
 
   citation-service:
     image: infrastructure-citation-service:latest
@@ -206,104 +187,58 @@ services:
   kafka1:
     image: confluentinc/cp-kafka:7.6.1
     hostname: kafka1
-
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
-
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://10.17.139.201:9092"
-
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@10.17.139.201:9093,2@10.17.139.202:9093,3@10.17.139.203:9093"
-
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-
-      CLUSTER_ID: "kraft-cluster-1"
-
     ports:
       - "9092:9092"
-
+    environment:
+      CLUSTER_ID: "kraft-cluster-1"
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://192.168.100.201:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@192.168.100.201:9093,3@192.168.100.203:9093"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "2"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "2"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
     volumes:
       - /mnt/distributed/kafka1:/var/lib/kafka/data
-
     networks:
       - sistema-network
-
-  kafka2:
-    image: confluentinc/cp-kafka:7.6.1
-    hostname: kafka2
-
-    environment:
-      KAFKA_NODE_ID: 2
-      KAFKA_PROCESS_ROLES: broker,controller
-
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
-
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://10.17.139.202:9092"
-
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@10.17.139.201:9093,2@10.17.139.202:9093,3@10.17.139.203:9093"
-
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-
-      CLUSTER_ID: "kraft-cluster-1"
-
-    ports:
-      - "9093:9092"
-
-    volumes:
-      - /mnt/distributed/kafka2:/var/lib/kafka/data
-
-    networks:
-      - sistema-network
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == dylan
 
   kafka3:
     image: confluentinc/cp-kafka:7.6.1
     hostname: kafka3
-
-    environment:
-      KAFKA_NODE_ID: 3
-      KAFKA_PROCESS_ROLES: broker,controller
-
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
-
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://10.17.139.203:9092"
-
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@10.17.139.201:9093,2@10.17.139.202:9093,3@10.17.139.203:9093"
-
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-
-      CLUSTER_ID: "kraft-cluster-1"
-
     ports:
       - "9094:9092"
-
+    environment:
+      CLUSTER_ID: "kraft-cluster-1"
+      KAFKA_NODE_ID: "3"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://192.168.100.203:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@192.168.100.201:9093,3@192.168.100.203:9093"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "2"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "2"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
     volumes:
       - /mnt/distributed/kafka3:/var/lib/kafka/data
-
     networks:
       - sistema-network
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == diego
 
   classification-model:
     image: infrastructure-classification-model:latest
@@ -314,7 +249,7 @@ services:
     deploy:
       placement:
         constraints:
-          - node.hostname == victor
+          - node.hostname == diego
 
 networks:
   sistema-network:
