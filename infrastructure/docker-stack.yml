@@ -160,7 +160,7 @@ services:
       - "9092:9092"
 
     environment:
-      CLUSTER_ID: "kraft-cluster-1"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
 
       KAFKA_NODE_ID: "1"
 
